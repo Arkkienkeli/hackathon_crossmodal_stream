@@ -1,1 +1,1 @@
-# hackathon_crossmodal_stream
+# Hackathon cross-modal stream
