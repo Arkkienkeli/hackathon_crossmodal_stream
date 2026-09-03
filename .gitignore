@@ -1,0 +1,14 @@
+
+# Python
+__pycache__/
+*.pyc
+
+# Logs
+*.log
+
+# Large analysis data
+*.parquet
+*.h5ad
+
+# Local downloads
+downloads/
