@@ -1,0 +1,4 @@
+embedding,silhouette_moa,knn_purity_k5,chance_k5,enrichment_k5,ari_kmeans,nmi_kmeans
+DIABLO (gex only),0.011,0.4,0.121,3.301,0.29,0.593
+DIABLO (morph only),-0.097,0.306,0.121,2.528,0.12,0.551
+DIABLO (joint),-0.215,0.289,0.121,2.388,0.044,0.416

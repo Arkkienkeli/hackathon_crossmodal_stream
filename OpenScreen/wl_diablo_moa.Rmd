@@ -1,0 +1,459 @@
+---
+title: "Morphology x Gene Expression DIABLO (moa-fine)"
+output: html_notebook
+---
+
+This implements mixOmics DIABLO model (`block.splsda`) that integrates the
+HepG2 morphology and gene expression blocks and tries to predict **`moa-fine`** compound annotation
+stored in `data/hepg2_mdata.h5mu`.
+
+The X blocks (gex, morph) are read from the wide CSVs generated from the mudata.
+The `moa-fine` labels aren't in those CSVs, so they were exported to `data/mixOmics/hepg2_moa_labels.csv`
+
+```{r export-note, eval=FALSE}
+# One-off export (Python, "hackathon" conda env) — re-run only if hepg2_mdata.h5mu changes:
+#   import mudata as md
+#   mdata = md.read_h5mu("data/hepg2_mdata.h5mu")
+#   obs = mdata.obs[["drug", "moa-fine"]].reset_index(drop=True)
+#   obs.columns = ["drug", "moa_fine"]
+#   obs.to_csv("data/mixOmics/hepg2_moa_labels.csv", index=False)
+```
+
+The gene pre-filter in step 4 reuses the same highly-variable-gene call
+`wl_integration_scvi.ipynb` uses for its scVI model (`seurat_v3` flavor on
+raw counts), rather than re-deriving "top variable" genes independently in
+R, so the gex feature set is identical across the two notebooks. Also a
+one-off export, re-run only if `hepg2_mdata.h5mu` changes:
+
+```{r export-note-hvg, eval=FALSE}
+#   import mudata as md
+#   import scanpy as sc
+#   mdata = md.read_h5mu("data/hepg2_mdata.h5mu")
+#   gex = mdata["gex"]
+#   sc.pp.highly_variable_genes(gex, flavor="seurat_v3", n_top_genes=5000, layer="raw_counts")
+#   hvg = gex.var[["highly_variable"]].reset_index(names="gene")
+#   hvg.to_csv("data/mixOmics/gex_hvg_scvi.csv", index=False)
+```
+
+```{r setup}
+if (!requireNamespace("BiocManager", quietly = TRUE)) install.packages("BiocManager")
+if (!requireNamespace("mixOmics", quietly = TRUE)) BiocManager::install("mixOmics")
+if (!requireNamespace("tidyverse", quietly = TRUE)) install.packages("tidyverse")
+```
+
+```{r libraries, message=FALSE}
+library(mixOmics)
+library(tidyverse)
+setwd("~/Git/hackathon_crossmodal_stream/OpenScreen/")
+```
+
+## 1. Load and reshape the X blocks
+
+```{r load-data}
+data_dir <- "~/Git/hackathon_crossmodal_stream/OpenScreen/data/mixOmics"
+
+gex_raw <- read_csv(file.path(data_dir, "hepg2_exp_X.csv"), show_col_types = FALSE)
+morph_raw <- read_csv(file.path(data_dir, "hepg2_morph_X.csv"), show_col_types = FALSE)
+
+# Both files are wide (feature x compound): first column holds feature names,
+# remaining columns are compounds. mixOmics wants compounds (samples) in rows
+# and features in columns, so transpose.
+to_sample_by_feature <- function(df) {
+  feat_names <- df[[1]]
+  mat <- as.matrix(df[, -1])
+  storage.mode(mat) <- "numeric"
+  rownames(mat) <- feat_names
+  t(mat)
+}
+
+gex <- to_sample_by_feature(gex_raw)
+morph <- to_sample_by_feature(morph_raw)
+
+dim(gex)   # compounds x genes
+dim(morph) # compounds x morphology features
+```
+
+## 2. Load moa-fine labels and align everything
+
+```{r load-labels}
+labels <- read_csv(file.path(data_dir, "hepg2_moa_labels.csv"), show_col_types = FALSE)
+
+common_compounds <- Reduce(intersect, list(rownames(gex), rownames(morph), labels$drug))
+length(common_compounds)
+
+gex <- gex[common_compounds, , drop = FALSE]
+morph <- morph[common_compounds, , drop = FALSE]
+labels <- labels[match(common_compounds, labels$drug), ]
+
+stopifnot(identical(rownames(gex), rownames(morph)))
+stopifnot(identical(rownames(gex), labels$drug))
+```
+
+## 3. Clean up the outcome (`moa-fine`)
+
+`moa-fine` has ~20 classes over 119 compounds, more than half of which are
+`"unclear"`, and many real classes have only 1-2 members — too few for any
+cross-validated fold. `"unclear"` is **excluded from training**
+but the compounds are kept aside so we can later project them onto the fitted
+embedding with `predict()` and see where they land relative to the trained
+classes. Classes too small to survive `Mfold` CV are dropped.
+
+```{r clean-labels}
+min_class_n <- 3 # should be >= the number of CV folds used below
+
+y_all <- factor(labels$moa_fine)
+table(y_all)
+
+is_unclear <- y_all == "unclear"
+unclear_compounds <- rownames(gex)[is_unclear]
+length(unclear_compounds)
+
+class_counts <- table(y_all[!is_unclear])
+small_classes <- names(class_counts[class_counts < min_class_n])
+
+train_keep <- !is_unclear & !(y_all %in% small_classes)
+Y <- droplevels(y_all[train_keep])
+train_compounds <- rownames(gex)[train_keep]
+
+table(Y)
+length(Y)
+```
+
+```{r}
+print("MoA classes too small for training (fewer than min_class_n)")
+cat(small_classes, sep = '\n')
+```
+
+## 4. Quality checks and gene pre-filter
+
+The zero-variance filter is computed from the **training** compounds only,
+so the held-out `unclear` compounds don't leak into which features get
+kept. The top-gene filter, though, reuses the exact highly-variable-gene
+set `wl_integration_scvi.ipynb` selects for its scVI model (`seurat_v3` on
+raw counts, `n_top_genes=5000`) rather than a fresh in-R variance ranking —
+that selection was fit on all 119 compounds (raw counts, not the z-scored
+values used here), so unlike the zero-variance filter it isn't
+training-only, but it does keep the two notebooks' gex feature sets
+identical for a fair comparison.
+
+```{r qc}
+gex_train <- gex[train_compounds, , drop = FALSE]
+morph_train <- morph[train_compounds, , drop = FALSE]
+
+sum(is.na(gex_train))
+sum(is.na(morph_train))
+
+keep_gex_cols <- apply(gex_train, 2, var, na.rm = TRUE) > 0
+keep_morph_cols <- apply(morph_train, 2, var, na.rm = TRUE) > 0
+gex_train <- gex_train[, keep_gex_cols, drop = FALSE]
+morph_train <- morph_train[, keep_morph_cols, drop = FALSE]
+
+# Same 5000 genes as wl_integration_scvi.ipynb's scVI model (see the
+# export-note-hvg chunk above), intersected with the zero-variance filter
+# above -- a gene can be HVG-flagged genome-wide but still constant across
+# just these 47 training compounds.
+hvg <- read_csv(file.path(data_dir, "gex_hvg_scvi.csv"), show_col_types = FALSE)
+hvg_genes <- hvg$gene[hvg$highly_variable]
+hvg_genes_kept <- intersect(hvg_genes, colnames(gex_train))
+length(hvg_genes_kept) # vs. length(hvg_genes) if some got dropped as zero-variance here
+
+gex_train <- gex_train[, hvg_genes_kept, drop = FALSE]
+
+dim(gex_train)
+dim(morph_train)
+```
+
+```{r unclear-features}
+# Same feature set as the training blocks above, applied to the held-out
+# 'unclear' compounds, for projection later on.
+gex_unclear <- gex[unclear_compounds, colnames(gex_train), drop = FALSE]
+morph_unclear <- morph[unclear_compounds, colnames(morph_train), drop = FALSE]
+
+dim(gex_unclear)
+dim(morph_unclear)
+```
+
+```{r rename-train}
+# Keep downstream chunks (design/model-fitting) unchanged: from here on
+# `gex`/`morph` refer to the training blocks only.
+gex <- gex_train
+morph <- morph_train
+```
+
+## 5. Assemble blocks and design matrix
+
+```{r data-design}
+data <- list(
+  gex = gex,
+  morph = morph
+)
+
+# Connection strength between the X blocks. Small values favour prediction,
+# values close to 1 favour exploring shared/correlated structure between
+# blocks. block.splsda internally adds Y and links every block to it.
+design <- matrix(0.8, ncol = length(data), nrow = length(data),
+                  dimnames = list(names(data), names(data)))
+diag(design) <- 0
+design
+```
+
+## 6. Pick the number of components
+
+```{r ncomp-tuning}
+# near.zero.var = TRUE: with 10-fold CV and ~47 training compounds, a fold's
+# ~42-sample training subset can easily have a gene/feature that comes out
+# constant even though it varies across the full training set. Without this,
+# perf() below errors with "There are features with zero variance in block
+# 'gex'." the moment a fold+repeat combination hits that. block.plsda applies
+# nearZeroVar() up front and perf() re-applies the same filter inside every
+# CV refit, so it's fixed for the whole CV run, not just the first fit.
+diablo.init <- block.plsda(X = data, Y = Y, ncomp = 10, design = design, near.zero.var = TRUE)
+
+set.seed(123)
+perf.diablo <- perf(diablo.init, validation = "Mfold", folds = 3, nrepeat = 10)
+
+plot(perf.diablo)
+perf.diablo$choice.ncomp$WeightedVote
+```
+
+
+```{r choose-ncomp}
+ncomp <- perf.diablo$choice.ncomp$WeightedVote["Overall.BER", "max.dist"]
+ncomp <- max(2, ncomp) # floor of 2 so comp1 vs comp2 plots below have something to show
+ncomp
+```
+
+
+## 7. Tune sparsity (feature selection) per block/component
+
+```{r keepx-grid}
+test.keepX <- list(
+  gex = c(5, 10, 20, 30, 50, 75, 100),
+  morph = c(5, 10, 20, 30, 50)
+)
+
+set.seed(123)
+tune.diablo <- tune.block.splsda(
+  X = data, Y = Y, ncomp = ncomp,
+  test.keepX = test.keepX, design = design,
+  validation = "Mfold", folds = 3, nrepeat = 5,
+  dist = "max.dist", progressBar = TRUE,
+  near.zero.var = TRUE
+)
+
+tune.diablo$choice.keepX
+```
+
+## 8. Fit the final DIABLO model
+
+```{r final-model}
+diablo <- block.splsda(
+  X = data, Y = Y, ncomp = ncomp,
+  keepX = tune.diablo$choice.keepX,
+  design = design,
+  near.zero.var = TRUE
+)
+
+diablo
+```
+
+## 8b. Single-modality DIABLO baselines (gex-only, morph-only)
+
+To find out whether the joint model is actually using cross-modal structure,
+fit the *same* `block.splsda` machinery on each block alone, reusing the
+joint model's `ncomp` and each block's own tuned `keepX` — the only thing
+that changes is whether the other block is present, so the three embeddings
+(joint, gex-only, morph-only) are directly comparable rather than being
+different methods with independently-chosen hyperparameters. `block.splsda`
+accepts a length-1 `X` list without complaint (the design matrix just
+collapses to a 1x1 zero matrix, since there are no other blocks to connect).
+
+```{r single-block-models}
+design.gex <- matrix(0, 1, 1, dimnames = list("gex", "gex"))
+diablo.gex <- block.splsda(
+  X = list(gex = data$gex), Y = Y, ncomp = ncomp,
+  keepX = list(gex = tune.diablo$choice.keepX$gex),
+  design = design.gex,
+  near.zero.var = TRUE
+)
+
+design.morph <- matrix(0, 1, 1, dimnames = list("morph", "morph"))
+diablo.morph <- block.splsda(
+  X = list(morph = data$morph), Y = Y, ncomp = ncomp,
+  keepX = list(morph = tune.diablo$choice.keepX$morph),
+  design = design.morph,
+  near.zero.var = TRUE
+)
+
+diablo.gex
+diablo.morph
+```
+
+## 9. Evaluate
+
+```{r perf-final}
+set.seed(123)
+perf.final <- perf(diablo, validation = "Mfold", folds = 3, nrepeat = 10,
+                     dist = "max.dist", progressBar = FALSE)
+
+perf.final$WeightedVote.error.rate
+```
+
+## 10. Visualise
+
+```{r plot-diablo}
+plotDiablo(diablo, ncomp = 1)
+```
+
+```{r plot-indiv}
+plotIndiv(diablo, ind.names = FALSE, legend = TRUE,
+          title = "DIABLO: sample space per block")
+```
+
+```{r plot-var}
+plotVar(diablo, style = "graphics", legend = TRUE,
+        pch = c(16, 17), cex = c(2, 2),
+        title = "DIABLO correlation circle")
+```
+
+```{r plot-loadings}
+pdf(')
+plotLoadings(diablo, comp = 1, contrib = "max", method = "median")
+```
+
+```{r circos}
+circosPlot(diablo, cutoff = 0.7, line = TRUE)
+```
+
+```{r cim}
+cimDiablo(diablo)
+```
+
+```{r network}
+ntw <- network(diablo, blocks = c("gex", "morph"), cutoff = 0.6,
+                color.node = c("steelblue", "darkorange"))
+```
+
+## 11. Export selected features per block/component
+
+```{r selected-features}
+selected <- map(seq_len(ncomp), function(cp) {
+  map_dfr(names(data), function(bl) {
+    sv <- selectVar(diablo, block = bl, comp = cp)[[bl]]
+    tibble(component = cp, block = bl, feature = sv$name, loading = sv$value$value.var)
+  })
+})
+selected <- bind_rows(selected)
+
+selected
+
+write_csv(selected, file.path(data_dir, "diablo_moa_selected_features.csv"))
+```
+
+## 12. Project the excluded `unclear` compounds onto each embedding
+
+`unclear` was excluded from training in step 3, but `predict()` can still map
+those compounds' gex/morph profiles into an already-fitted DIABLO latent
+space, using that model's own loadings. This gives their component scores
+(and, for curiosity, which trained class they'd be nearest to) without them
+ever having influenced any of the three models fit above.
+
+```{r predict-unclear}
+pred.unclear.joint <- predict(diablo, newdata = list(gex = gex_unclear, morph = morph_unclear))
+pred.unclear.gex <- predict(diablo.gex, newdata = list(gex = gex_unclear))
+pred.unclear.morph <- predict(diablo.morph, newdata = list(morph = morph_unclear))
+
+# Nearest trained class per block/component, per distance metric (curiosity
+# only -- these compounds were never labelled with a real moa-fine class)
+pred.unclear.joint$class$max.dist
+```
+
+```{r plot-projection}
+plot_df <- map_dfr(names(data), function(bl) {
+  train_df <- as.data.frame(diablo$variates[[bl]][, 1:2, drop = FALSE])
+  colnames(train_df) <- c("comp1", "comp2")
+  train_df$compound <- rownames(train_df)
+  train_df$moa_fine <- as.character(Y)
+  train_df$source <- "training"
+
+  new_df <- as.data.frame(pred.unclear.joint$variates[[bl]][, 1:2, drop = FALSE])
+  colnames(new_df) <- c("comp1", "comp2")
+  new_df$compound <- rownames(new_df)
+  new_df$moa_fine <- "unclear"
+  new_df$source <- "projected (unclear)"
+
+  bind_rows(train_df, new_df) %>% mutate(block = bl)
+})
+
+ggplot(plot_df, aes(comp1, comp2, color = moa_fine, shape = source)) +
+  geom_point(size = 2, alpha = 0.8) +
+  scale_shape_manual(values = c(training = 16, `projected (unclear)` = 4)) +
+  facet_wrap(~block, scales = "free") +
+  theme_bw() +
+  labs(title = "DIABLO embedding with projected 'unclear' compounds",
+       x = "Component 1", y = "Component 2")
+```
+
+## 13. Export all three embeddings for cross-tool (scanpy) comparison
+
+The gex-only and morph-only models each have a single block, so their
+`$variates` for that block *is* the embedding. The joint model instead has
+one variate matrix per block (correlated, but not identical) — the standard
+single embedding to report for DIABLO is the per-component weighted average
+of the block variates, weighted by each block's correlation with `Y`
+(`diablo$weights`; this is exactly what `plotIndiv(diablo, blocks =
+"weighted.average")` plots). Computed here directly, applied to both the
+training variates and the `predict()`-projected ones, so it plays the same
+role as totalVI's single joint latent (`X_totalvi_joint`) in
+`wl_integration_scvi.ipynb`.
+
+```{r joint-embedding}
+weighted_average_variates <- function(variates, weights, blocks) {
+  w <- weights[blocks, , drop = FALSE]
+  weighted <- Map(function(bl) sweep(variates[[bl]], 2, as.numeric(w[bl, ]), `*`), blocks)
+  sweep(Reduce(`+`, weighted), 2, colSums(w), `/`)
+}
+
+diablo.joint.train.variates <- weighted_average_variates(diablo$variates, diablo$weights, names(data))
+diablo.joint.pred.variates <- weighted_average_variates(pred.unclear.joint$variates, diablo$weights, names(data))
+```
+
+One CSV per embedding (joint / gex-only / morph-only), each with all 119
+compounds: the `ncomp` DIABLO component scores (fitted for the 64 training
+compounds, `predict()`-projected for the 55 `unclear` ones), plus `moa_fine`
+and whether that row was `training` or `projected`.
+
+```{r export-embeddings}
+comp_cols <- paste0("comp", seq_len(ncomp))
+
+variates_to_df <- function(train_variates, pred_variates, train_Y) {
+  train_df <- as.data.frame(train_variates[, seq_len(ncomp), drop = FALSE])
+  colnames(train_df) <- comp_cols
+  train_df$compound <- rownames(train_variates)
+  train_df$moa_fine <- as.character(train_Y)
+  train_df$source <- "training"
+
+  new_df <- as.data.frame(pred_variates[, seq_len(ncomp), drop = FALSE])
+  colnames(new_df) <- comp_cols
+  new_df$compound <- rownames(pred_variates)
+  new_df$moa_fine <- "unclear"
+  new_df$source <- "projected"
+
+  bind_rows(train_df, new_df) %>% relocate(compound, moa_fine, source)
+}
+
+embeddings <- list(
+  joint = variates_to_df(diablo.joint.train.variates, diablo.joint.pred.variates, Y),
+  gex   = variates_to_df(diablo.gex$variates$gex, pred.unclear.gex$variates$gex, Y),
+  morph = variates_to_df(diablo.morph$variates$morph, pred.unclear.morph$variates$morph, Y)
+)
+
+embed_dir <- file.path(data_dir, "diablo_embeddings")
+dir.create(embed_dir, showWarnings = FALSE)
+
+iwalk(embeddings, function(df, name) {
+  write_csv(df, file.path(embed_dir, paste0("diablo_", name, ".csv")))
+})
+
+map_int(embeddings, nrow) # sanity check: 119 rows each
+```
