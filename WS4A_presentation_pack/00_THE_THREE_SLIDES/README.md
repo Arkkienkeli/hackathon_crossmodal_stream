@@ -16,6 +16,20 @@ Full background, how to read every element, the sentences to say, and the questi
 you will get: `../HOW_TO_PRESENT.md`, section **"If you only get two or three
 slides"**.
 
+## SLIDE_3b — the explainer, if anyone looks lost
+
+`SLIDE_3b_where_a_row_comes_from.png` walks the whole chain in five numbered steps,
+with real numbers rather than symbols: one combination (6 questions × 5 data types =
+30) → four recipes → each run twice, true answers and randomised → subtract → those
+four gaps ARE one row of the concordance plot.
+
+The worked box is mechanism-from-photograph: **74.5 % right on the true answers,
+47.7 % with the answers randomised, so +0.267**. It also shows the four randomised
+runs came out at 47.7, 48.2, 48.5 and 51.7 % — never exactly 50 %, which is the
+clearest answer to "why not just compare against a coin flip?"
+
+Put it immediately before the concordance slide, or hold it in reserve.
+
 ## Slide 1: which of the two?
 
 `SLIDE_1_morphology_vs_chemistry.png` shows **differences** — it does the subtraction

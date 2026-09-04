@@ -365,6 +365,62 @@ add_slide(
         "The x marks XGBoost, which was degenerate in every arm (predicted one class "
         "every fold) and is therefore not a measurement."))
 
+# ---------------------------------------------------------------- HOW A ROW IS MADE
+add_slide(
+    prs,
+    kicker="BEFORE THE NEXT SLIDE  ·  where every number comes from",
+    say="One combination, four recipes, run twice — that is one row",
+    subtitle="The same chain produces every number in this talk. Worked through with "
+             "real figures from one box.",
+    figure=FIG / "SLIDE_3b_where_a_row_comes_from.png",
+    fig_h=3.55,
+    text_size=11,
+    blocks=[
+        ("READ IT LEFT TO RIGHT, THEN DOWN.",
+         "A COMBINATION is one question paired with one kind of data — six questions × "
+         "five data types = 30, and each becomes one row of the next slide. FOUR RECIPES "
+         "try each combination; three draw a dividing line in different ways and the "
+         "fourth builds a flowchart instead, so agreement between them is not a quirk of "
+         "one method. Each recipe is run TWICE — once with the true answers, once with "
+         "the answers dealt out at random. Subtract, and the four resulting gaps ARE the "
+         "four dots on one row."),
+        ("THE NUMBERS ARE REAL ONES, FROM THE HEADLINE BOX.",
+         "Mechanism predicted from the photograph. The best recipe got 74.5 % right on "
+         "the true answers and still got 47.7 % when the answers were randomised, so the "
+         "honest gap is +0.267. Note the four randomised runs came out at 47.7, 48.2, "
+         "48.5 and 51.7 % — never exactly 50 %. That is why each box is measured against "
+         "its OWN randomised control instead of against a nominal coin flip."),
+    ],
+    notes=(
+        "USE THIS SLIDE IF ANYONE LOOKS LOST. It is the whole method in one picture, "
+        "and it is worked with real numbers rather than symbols.\n\n"
+        "SAY:\n"
+        "\"Let me show you exactly where one of these numbers comes from.\n\n"
+        "A combination is one question and one kind of data — mechanism from the "
+        "photograph, say. There are thirty of those, and each one becomes a row on the "
+        "next slide.\n\n"
+        "Four different recipes try that combination. Three of them draw a dividing line "
+        "through the data in different ways; the fourth doesn't draw a line at all, it "
+        "builds a flowchart of yes/no questions. That difference matters — if all four "
+        "agree, it isn't a quirk of one method.\n\n"
+        "Each recipe runs twice. Once with the true answers. Once with the answers dealt "
+        "out at random, so drug A gets drug B's answer and there is nothing left to "
+        "learn. Then we subtract.\n\n"
+        "Here are the real numbers. The best recipe got 74.5 percent right on the true "
+        "answers. With the answers randomised it STILL got 47.7 percent — that is what "
+        "luck alone buys with 119 drugs and 41,780 measurements. 74.5 minus 47.7 is the "
+        "0.267 you will see on the next slide.\n\n"
+        "And notice the randomised runs: 47.7, 48.2, 48.5, 51.7. Never exactly fifty. "
+        "That is why we compare every box against its own randomised control rather than "
+        "against a coin flip.\"\n\n"
+        "IF ASKED\n"
+        "Q: Why 25 train-test rounds?\n"
+        "A: One split could be lucky. We hide a different fifth of the drugs each time "
+        "and average, so every drug is hidden several times.\n\n"
+        "Q: How many models is that in total?\n"
+        "A: 30 combinations x 4 recipes x 2 label conditions x 25 rounds, about 6,000 "
+        "fits -- and we did the whole thing twice, tuned and untuned."))
+
 # ---------------------------------------------------------------- CONCORDANCE
 add_slide(
     prs,
