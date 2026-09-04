@@ -151,6 +151,36 @@ contributed something chemistry did not already have.
 - **green** — chemistry+morphology *minus* chemistry → is it better *as well as*?
 - **orange** — expression+morphology *minus* expression → does it add on top of RNA-seq?
 
+#### Where each number comes from — the worked example to use when someone is lost
+
+The single most common confusion is that the numbers look like accuracies and are not.
+Walk through one box:
+
+**Morphology predicting mechanism, the box reading +0.267.**
+
+| | |
+|---|---|
+| best model, **unshuffled** (real answers) | got **74.5 %** right |
+| the same model, **shuffled** (answers dealt out at random) | still got **47.7 %** |
+| printed in the box | 0.745 − 0.477 = **+0.267** |
+
+Two things to draw out of that:
+
+1. **It is not accuracy.** The model was right 74.5 % of the time. The reported figure
+   is how far it beat *its own* shuffled twin.
+2. **The shuffled run was 47.7 %, not 50 %.** Across the four models in that one box the
+   shuffled runs ranged **47.7 – 51.7 %**. Each box therefore gets compared against its
+   own control, never against a nominal 0.5 — that spread is exactly why.
+
+And what "shuffled" means concretely: every box is run **twice**. Unshuffled, each drug
+keeps its true answer. Shuffled, drug A is given drug B's answer, so the link between
+measurements and answer is destroyed on purpose and there is nothing left to learn. The
+model still scores something, because with 119 drugs and up to 41,780 measurements some
+of them line up with random answers by chance. That residue is the luck level.
+
+The results table holds both halves: **120 rows unshuffled, 120 shuffled, 240 in
+total.** `Results/ws4a_tuned/ml/ml_hepg2.csv`, column `permuted`.
+
 #### The numbers
 
 | question | chemistry alone | + morphology | change |

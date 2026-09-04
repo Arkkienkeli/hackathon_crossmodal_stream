@@ -234,27 +234,45 @@ add_slide(
     subtitle="+0.143 over chemical structure for mechanism of action, all four models "
              "agreeing.  For all five toxicity endpoints it adds nothing.",
     figure=FIG / "SLIDE_1_ALT_signal_map.png",
-    fig_h=2.85,
+    fig_h=1.95,
+    text_size=10.5,
     blocks=[
-        ("HOW TO READ IT.",
-         "Rows are the six questions; columns are what the model was allowed to look "
-         "at. Each cell holds the best of four models, measured as the HONEST GAP — its "
-         "score on the real answers minus its score when the answers were scrambled. "
-         "Red = real signal. White = nothing. The small text under each number is how "
-         "many of the four models independently found it."),
-        ("WHAT IT SHOWS.",
-         "The top row — mechanism of action — is the only row that works across the "
-         "board. Chemical structure alone gives +0.175; the photograph alone gives "
-         "+0.267; the two together give +0.318. Now read DOWN the morphology column: "
-         "every toxicity row is near-white (+0.012, +0.011, +0.008, +0.064, −0.005) "
-         "with 0 of 4 models finding anything. Meanwhile the chemistry column IS "
-         "predicting the toxicity endpoints."),
-        ("THE POINT.",
-         "Chemistry is the control because it is free — no cells, no microscope, no "
-         "sequencing — and chemists have predicted drug properties from structure for "
-         "thirty years. So the question is not whether imaging beats chance, but "
-         "whether it beats the free option. For MECHANISM it does, adding +0.143 on top "
-         "of chemistry with all four models agreeing. For TOXICITY it does not."),
+        ("WHAT A \"MODEL\" IS.",
+         "A recipe for guessing. We show it drugs whose answer we already know — here "
+         "are 636 numbers from the photograph, and yes, this one is a DNA-synthesis "
+         "inhibitor — and it learns a rule. Then it must guess drugs it has NEVER seen. "
+         "Four different recipes are used on every box: three that draw a dividing line "
+         "in different ways (elastic net, sparse PLS-DA, linear SVM) and one that builds "
+         "a flowchart of yes/no questions instead (XGBoost)."),
+        ("SHUFFLED vs UNSHUFFLED — every box is run TWICE.",
+         "UNSHUFFLED: each drug keeps its true answer. SHUFFLED: we deal the answers out "
+         "at random, so drug A is given drug B's answer — the link between measurements "
+         "and answer is destroyed on purpose, so there is nothing left to learn. The "
+         "model still scores something, because with 119 drugs and up to 41,780 "
+         "measurements some line up with random answers by pure chance. THAT is the luck "
+         "level, and it differs for every box."),
+        ("WHERE THE NUMBER IN EACH BOX COMES FROM.",
+         "Worked example — morphology predicting mechanism, the box reading +0.267. The "
+         "best model got 74.5 % right on the real answers. With the answers shuffled it "
+         "still got 47.7 %. 0.745 − 0.477 = +0.267, and that difference is what is "
+         "printed. So the number is NOT accuracy — it is how far the model beat its own "
+         "shuffled twin. Note the shuffled run was 47.7 %, not 50 %: across the four "
+         "models in that one box it ranged 47.7–51.7 %, which is why each box is "
+         "compared against its OWN control rather than against 0.5."),
+        ("HOW TO READ THE GRID.",
+         "Rows are the six questions; columns are what the model was allowed to look at. "
+         "Red = the model beat its shuffled twin. White = it did not. −0.005 means it did "
+         "slightly WORSE than nonsense, which is what \"nothing here\" looks like when "
+         "measured honestly. The small print — 4/4 models — is how many of the four "
+         "recipes each independently beat its own shuffled run."),
+        ("WHAT IT SHOWS, AND THE POINT.",
+         "The top row, mechanism of action, is the only row that works across the board: "
+         "chemistry +0.175, the photograph +0.267, both together +0.318. Read DOWN the "
+         "morphology column and every toxicity row is near-white with 0 of 4 models "
+         "finding anything — while the chemistry column IS predicting them. Chemistry is "
+         "the control because it is free, so the question is not whether imaging beats "
+         "chance but whether it beats the free option. For MECHANISM it does, by +0.143. "
+         "For TOXICITY it does not."),
     ],
     notes=(
         "SAY:\n"
