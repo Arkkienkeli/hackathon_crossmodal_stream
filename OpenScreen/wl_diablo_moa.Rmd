@@ -317,12 +317,56 @@ plotVar(diablo, style = "graphics", legend = TRUE,
 ```
 
 ```{r plot-loadings}
-pdf(')
 plotLoadings(diablo, comp = 1, contrib = "max", method = "median")
 ```
 
 ```{r circos}
-circosPlot(diablo, cutoff = 0.7, line = TRUE)
+# Capture the return value: circosPlot() invisibly returns the full
+# feature-by-feature similarity matrix it draws links from (all selected
+# gex + morph features), which the next chunk reuses to pull out the actual
+# gex-morph pairs behind the plot.
+simMat <- circosPlot(diablo, cutoff = 0.8, line = TRUE)
+
+pdf('figures/diablo_circos.pdf', height = 12, width = 12)
+circosPlot(diablo, cutoff = 0.8, line = TRUE, size.labs = 0)
+dev.off()
+```
+
+## 10b. Top gex-morph feature pairs behind the circos plot
+
+`circosPlot()`'s similarity score for a pair of features is the dot product
+of each feature's per-component correlation with its own block's DIABLO
+components (`cor(feature, block_variates)`), summed over the components
+plotted -- not a raw pairwise Pearson correlation between the two features'
+values, though it behaves like one (bounded, sign meaningful, comparable
+cutoff). It's computed only for the *selected* (nonzero-loading) features
+per block -- the same ones drawn as segments on the circos plot.
+
+```{r circos-top-hits}
+link_cutoff <- 0.8
+
+comp_used <- seq_len(min(diablo$ncomp))
+keepA <- lapply(diablo$loadings[c("gex", "morph")], function(load) {
+  apply(abs(load)[, comp_used, drop = FALSE], 1, sum) > 0
+})
+gex_feats <- rownames(diablo$loadings$gex)[keepA$gex]
+morph_feats <- rownames(diablo$loadings$morph)[keepA$morph]
+stopifnot(nrow(simMat) == length(gex_feats) + length(morph_feats))
+
+dimnames(simMat) <- list(c(gex_feats, morph_feats), c(gex_feats, morph_feats))
+cross_cor <- simMat[gex_feats, morph_feats, drop = FALSE]
+
+top_hits <- as.data.frame(as.table(cross_cor)) %>%
+  rename(gex_feature = Var1, morph_feature = Var2, r = Freq) %>%
+  filter(abs(r) >= link_cutoff) %>%
+  arrange(desc(r))
+
+cat(sum(top_hits$r > 0), "positive and", sum(top_hits$r < 0),
+    "negative gex-morph pairs at |r| >=", link_cutoff, "\n")
+
+top_hits # sorted highest (most positive) to lowest (most negative)
+
+#write_csv(top_hits, file.path(data_dir, "diablo_circos_top_hits.csv"))
 ```
 
 ```{r cim}
