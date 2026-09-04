@@ -1,0 +1,22 @@
+moa_fine,color
+CDK inhibitor,#023fa5
+Cyclooxygenase inhibitor,#7d87b9
+DNA synthesis/repair inhibitor,#bec1d4
+EGFR/ERBB inhibitor,#d6bcc0
+GSK3 inhibitor,#bb7784
+Glucocorticoid receptor agonist,#8e063b
+Glucose transporter inhibitor,#4a6fe3
+JAK/STAT inhibitor,#8595e1
+MEK inhibitor,#b5bbe3
+MTOR inhibitor,#e6afb9
+Microtubule inhibitor,#e07b91
+Multi-TK inhibitor,#d33f6a
+Other MAPK inhibitor,#11c638
+Other TK inhibitor,#8dd593
+PI3K/AKT inhibitor,#c6dec7
+Proteasome inhibitor,#ead3c6
+Protein synthesis inhibitor,#f0b98d
+RAF inhibitor,#ef9708
+Retinoic receptor agonist,#0fcfc0
+Sonic inhibitor,#9cded6
+unclear,#d5eae7

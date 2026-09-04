@@ -1,0 +1,4 @@
+embedding,silhouette_moa,knn_purity_k5,chance_k5,enrichment_k5,ari_kmeans,nmi_kmeans
+PCA (gex only),-0.322,0.141,0.069,2.04,0.058,0.576
+PCA (morph only),-0.27,0.181,0.069,2.629,0.104,0.628
+CCA (joint),-0.233,0.156,0.069,2.266,0.093,0.601
