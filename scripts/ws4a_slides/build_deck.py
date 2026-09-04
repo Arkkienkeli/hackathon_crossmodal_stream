@@ -80,8 +80,13 @@ def blocks_box(slide, x, y, w, h, blocks, size=11.5):
     return tb
 
 
-def add_slide(prs, *, kicker, say, figure, blocks, notes, fig_h=3.0, text_size=11.5):
-    """Kicker, say-this headline, figure, then labelled explanation blocks.
+def add_slide(prs, *, kicker, say, figure, blocks, notes, subtitle=None,
+              fig_h=3.0, text_size=11.5):
+    """Kicker, a SHORT conclusion as the title, an elaborating line, then the figure
+    and the labelled explanation blocks.
+
+    The title states what the slide concludes -- not what it contains -- so a reader
+    who sees only the titles still gets the argument. The nuance moves to `subtitle`.
 
     The figure is deliberately given less room than the text: the presenter can resize
     it by hand, but they cannot invent the explanation.
@@ -89,11 +94,15 @@ def add_slide(prs, *, kicker, say, figure, blocks, notes, fig_h=3.0, text_size=1
     s = prs.slides.add_slide(prs.slide_layouts[6])
     bg(s)
     if kicker:
-        textbox(s, Inches(0.5), Inches(0.16), Inches(12.4), Inches(0.3),
+        textbox(s, Inches(0.5), Inches(0.14), Inches(12.4), Inches(0.3),
                 kicker, 12, ACC, bold=True)
-    textbox(s, Inches(0.5), Inches(0.44), Inches(12.4), Inches(0.8),
-            say, 20, INK, bold=True)
-    top = 1.30
+    textbox(s, Inches(0.5), Inches(0.40), Inches(12.4), Inches(0.55),
+            say, 26, INK, bold=True)
+    top = 1.12
+    if subtitle:
+        textbox(s, Inches(0.5), Inches(0.98), Inches(12.4), Inches(0.35),
+                subtitle, 14, MUT)
+        top = 1.48
     if figure:
         picture_fit(s, figure, Inches(0.45), Inches(top),
                     Emu(int(Inches(12.45))), Emu(int(Inches(fig_h))))
@@ -108,10 +117,13 @@ prs.slide_width, prs.slide_height = W, H
 
 # ---------------------------------------------------------------- TITLE
 s = prs.slides.add_slide(prs.slide_layouts[6]); bg(s)
-textbox(s, Inches(0.9), Inches(2.2), Inches(11.5), Inches(1.2),
-        "Does the microscope tell us anything\nchemistry doesn't already?", 34, INK,
+textbox(s, Inches(0.9), Inches(2.05), Inches(11.5), Inches(1.3),
+        "Cell Painting tells you about mechanism —\nnot about toxicity", 34, INK,
         bold=True)
-textbox(s, Inches(0.9), Inches(4.0), Inches(11.5), Inches(1.6),
+textbox(s, Inches(0.9), Inches(3.45), Inches(11.5), Inches(0.5),
+        "…and it beats chemical structure, which is free, at doing so.", 17, ACC,
+        bold=True)
+textbox(s, Inches(0.9), Inches(4.15), Inches(11.5), Inches(1.1),
         "WS4A · cross-modal integration · HepG2\n"
         "119 compounds · morphology (636) × gene expression (41,780) × "
         "chemical structure (1,024)", 15, MUT)
@@ -141,9 +153,11 @@ s.notes_slide.notes_text_frame.text = (
 add_slide(
     prs,
     kicker="WHAT WAS TRAINED, AND HOW",
-    say="Six questions · five kinds of data · four models · every setting chosen on data the score never sees.",
+    say="Only 119 drugs — so every score gets a scrambled-label twin",
+    subtitle="Six questions · five kinds of data · four model families · every setting "
+             "chosen on drugs the score never sees.",
     figure=FIG / "SLIDE_0_how_it_was_trained.png",
-    fig_h=2.75,
+    fig_h=2.55,
     blocks=[
         ("THE DATA.",
          "119 compounds, each described three ways: its chemical structure (free — "
@@ -216,9 +230,11 @@ add_slide(
 add_slide(
     prs,
     kicker="RESULT 1 OF 3",
-    say="Morphology beats chemistry for mechanism — and adds nothing for toxicity.",
+    say="Morphology beats chemistry — for mechanism only",
+    subtitle="+0.143 over chemical structure for mechanism of action, all four models "
+             "agreeing.  For all five toxicity endpoints it adds nothing.",
     figure=FIG / "SLIDE_1_ALT_signal_map.png",
-    fig_h=3.05,
+    fig_h=2.85,
     blocks=[
         ("HOW TO READ IT.",
          "Rows are the six questions; columns are what the model was allowed to look "
@@ -275,9 +291,11 @@ add_slide(
 add_slide(
     prs,
     kicker="RESULT 2 OF 3  ·  reconciles with Task 1",
-    say="Selecting 2,000 genes costs 16× what the leakage it was criticised for was worth.",
+    say="Gene selection, not the modality, is why expression lost",
+    subtitle="Dropping to 2,000 highly variable genes costs 16× what the leakage it is "
+             "usually criticised for was worth.",
     figure=FIG / "SLIDE_2_hvg_selection_cost.png",
-    fig_h=2.95,
+    fig_h=2.75,
     blocks=[
         ("THE BACKGROUND.",
          "Almost every single-cell workflow keeps only the ~2,000 most variable genes "
@@ -333,9 +351,11 @@ add_slide(
 add_slide(
     prs,
     kicker="RESULT 3 OF 3  ·  why this is not one lucky model",
-    say="Four model families that work differently agree on where the signal is.",
+    say="Four different models, the same answer",
+    subtitle="Model families that fail in different ways agree on where the signal is — "
+             "better evidence here than a p-value cross-validation cannot honestly give.",
     figure=FIG / "SLIDE_3_models_agree.png",
-    fig_h=2.85,
+    fig_h=2.65,
     blocks=[
         ("WHY THIS SLIDE.",
          "The obvious objection to any result from 119 compounds is that we got lucky "
@@ -410,9 +430,12 @@ add_slide(
 
 # ---------------------------------------------------------------- CLOSE
 s = prs.slides.add_slide(prs.slide_layouts[6]); bg(s)
-textbox(s, Inches(0.6), Inches(0.5), Inches(12.2), Inches(0.6),
-        "What we can say — and what we cannot", 26, INK, bold=True)
-textbox(s, Inches(0.7), Inches(1.45), Inches(5.9), Inches(4.6),
+textbox(s, Inches(0.6), Inches(0.42), Inches(12.2), Inches(0.55),
+        "Narrow claims, and the controls that made them narrow", 26, INK, bold=True)
+textbox(s, Inches(0.6), Inches(1.02), Inches(12.2), Inches(0.35),
+        "Several of these controls changed our own conclusions — that is the point.",
+        14, MUT)
+textbox(s, Inches(0.7), Inches(1.60), Inches(5.9), Inches(4.5),
         "WE CAN SAY\n\n"
         "•  Morphology adds +0.143 over chemical\n    structure for mechanism, 4 of 4 models\n\n"
         "•  It adds nothing for the five toxicity\n    endpoints — chemistry does that\n\n"
@@ -420,7 +443,7 @@ textbox(s, Inches(0.7), Inches(1.45), Inches(5.9), Inches(4.6),
         "•  The modalities agree weakly but really\n    (adjusted RV 0.016, Mantel p = 0.0001)\n\n"
         "•  Dropping to 2,000 HVGs costs 16× what\n    its leakage was worth",
         14, INK)
-textbox(s, Inches(6.9), Inches(1.45), Inches(5.9), Inches(4.6),
+textbox(s, Inches(6.9), Inches(1.60), Inches(5.9), Inches(4.5),
         "WE MUST NOT SAY\n\n"
         "•  Any plain RV number — it scores random\n    noise as high as our real data\n\n"
         "•  \"r = 0.903\" — its own null reaches 0.902.\n    Quote the p-value (0.017)\n\n"

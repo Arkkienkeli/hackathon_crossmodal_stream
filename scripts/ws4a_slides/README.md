@@ -37,3 +37,19 @@ python-pptx cannot measure wrapped height:
 soffice --headless --convert-to pdf --outdir /tmp "$PACK/WS4A_slides.pptx"
 pdftoppm -png -r 70 /tmp/WS4A_slides.pdf /tmp/slide   # then look at each one
 ```
+
+## Titles are conclusions, not labels
+
+Each slide's title states **what the slide concludes**, in as few words as possible —
+"Morphology beats chemistry — for mechanism only", not "Signal map". A reader who sees
+only the titles should still get the argument:
+
+1. Cell Painting tells you about mechanism — not about toxicity
+2. Only 119 drugs — so every score gets a scrambled-label twin
+3. Morphology beats chemistry — for mechanism only
+4. Gene selection, not the modality, is why expression lost
+5. Four different models, the same answer
+6. Narrow claims, and the controls that made them narrow
+
+The precision that a short title loses moves to `subtitle=` — one grey line under the
+title carrying the number or the caveat. Keep that split when editing.
