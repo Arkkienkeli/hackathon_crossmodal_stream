@@ -1,0 +1,286 @@
+# WS4A — cross-modal integration. Every path and parameter lives here.
+#
+#   bash scripts/ws4a.sh python /work/scripts/ws4a_stats.py --config /work/configs/ws4a.yaml
+#
+# Paths may be absolute, or relative to `root`. `root` itself, if relative, is
+# resolved against the directory holding THIS file's repository, so the same
+# config works on the workstation and on a cluster after an rsync.
+#
+# Nothing in scripts/ hardcodes a path. If a script needs a new input, it gets a
+# key here.
+
+# In THIS repository the stream folder is the repository root, so `root` is `.`.
+# `root` is resolved against the directory holding this file's parent, i.e. the
+# repo root, so DATA_MAIN/, LINCS/ and OpenScreen/ resolve directly beneath it.
+root: .
+
+paths:
+  # MuData: compound-level, three matched modalities (morphology / expression / ecfp)
+  mudata_dir: "DATA_MAIN/MuData (morph, exp, chemical)-20260902T205527Z-1-001/MuData (morph, exp, chemical)"
+  mudata:
+    a549:  a549_mdata.h5mu
+    hepg2: hepg2_mdata.h5mu
+
+  # OpenScreen: the PER-SITE view of the same HepG2 morphology the MuData collapses.
+  # Verified identical 636 feature names and 118/119 shared compounds, which is what
+  # makes leave-one-site-out validation possible.
+  openscreen_dir: OpenScreen/data
+  openscreen_sites:
+    FMP:    morphology_FMP_HepG2.h5ad
+    IMTM:   morphology_IMTM_HepG2.h5ad
+    MEDINA: morphology_MEDINA_HepG2.h5ad
+  openscreen_consensus:
+    FMP:    morphology_FMP_HepG2_consensus.h5ad
+    IMTM:   morphology_IMTM_HepG2_consensus.h5ad
+    MEDINA: morphology_MEDINA_HepG2_consensus.h5ad
+
+  # Tahoe single cell — only used by the optional cell-level tier.
+  singlecell_dir: DATA_MAIN/Tahoe_singl_cell
+  singlecell:
+    a549:  lincs_expression_a549-002.h5ad
+    hepg2: hepg2_cells-001.h5ad
+
+  outputs: LINCS/data/ws4a          # everything written lands here
+  cache: LINCS/data/ws4a/cache
+
+# --------------------------------------------------------------------------- #
+# Data hygiene. The A549 morphology in the delivered MuData is contaminated:
+# 44 of 615 features exceed |500| with a maximum of 1.5e19 (the drop_outliers
+# defect). HepG2 is clean. Never analyse the contaminated matrix silently.
+# --------------------------------------------------------------------------- #
+hygiene:
+  # abort | clean | ignore.  `abort` is the default on purpose.
+  on_contamination: abort
+  # A feature whose max |value| exceeds this is contaminated. pycytominer's own
+  # feature_select uses outlier_cutoff=500.0.
+  outlier_cutoff: 500.0
+  # pycytominer's packaged blocklist is written Nuclei_/Cytoplasm_ while OpenScreen
+  # features are Nuc_/Cyto_, so it matches NOTHING here without translation.
+  # Measured: 0 of 55 match raw; 11 match after translation.
+  apply_blocklist: true
+  blocklist_prefix_map:
+    Nuc_: Nuclei_
+    Cyto_: Cytoplasm_
+  drop_zero_variance: true
+  # Rows/features with more missingness than this are dropped.
+  max_na_fraction: 0.05
+
+# --------------------------------------------------------------------------- #
+# Tier 1 — matrix-level agreement. This is the workstream's actual question.
+# --------------------------------------------------------------------------- #
+stats:
+  modality_pairs:
+    - [morphology, expression]
+    - [morphology, ecfp]
+    - [expression, ecfp]
+
+  scaling: zscore                  # per-feature standardisation before distances
+  distance: euclidean              # euclidean | cosine | correlation
+  permutations: 9999
+  seed: 0
+
+  # NEVER report the plain RV as an effect size. Measured on independent blocks at
+  # n=94, p=615, q=41780 where the true value is 0: plain RV = 0.930, Smilde's RV2 =
+  # 0.234, Mayer's adjusted RV = -0.0002. Only the adjusted one is usable. The
+  # permutation p-value is calibrated for all of them.
+  report_effect: rv_adj
+  report_raw_statistics: true      # kept in the CSV, never used as the headline
+
+  ajive:
+    enabled: true
+    # Blocks are PCA-reduced first; these are the initial signal ranks.
+    init_signal_ranks:
+      morphology: 20
+      expression: 20
+      ecfp: 20
+    n_randdir_samples: 1000
+    n_wedin_samples: 1000
+    # Permutation null on the joint rank itself — the check that the joint
+    # structure is not an artefact of the rank choice.
+    permutation_null_reps: 20
+
+  cca:
+    enabled: true
+    # PC-CCA reaches r ~ 0.9 on PERMUTED NULL data when too many PCs are retained.
+    # Keep the budget small relative to n and always report the permutation p.
+    n_components: 3
+    pc_budget: 10                  # PCs retained per block before CCA; n=94 -> keep small
+    permutations: 999
+
+# --------------------------------------------------------------------------- #
+# Tier 2 — supervised, only where labels support it.
+# --------------------------------------------------------------------------- #
+ml:
+  targets:
+    # MEASURED label landscape (both cell lines), which is why the guards below exist:
+    #   moa-fine   HepG2: 'unclear' 55, DNA-synth 14, MTOR 5, everything else <=4
+    #              A549 : 'unclear' 42, DNA-synth 10, COX 6, everything else <=4
+    #              -> multiclass MoA is not viable. one_vs_rest on the top class is.
+    #   depmap_auc A549 n=53 (usable), HepG2 n=22 (too small -- auto-skipped)
+    #   toxicity   n=63-70, but balance ranges from 37/33 (fine) to 68/2 (useless)
+    moa:
+      column: moa-fine
+      kind: classification
+      drop_values: ["unclear", "nan", "NaN", ""]
+      # one_vs_rest: largest class vs all other ANNOTATED compounds ("unclear" stays
+      # dropped, so the negative class is real MoA, not unknown MoA).
+      # multiclass: keep every class with >= min_class_size members.
+      mode: one_vs_rest
+      min_class_size: 3
+      max_classes: 6
+    depmap_auc:
+      column: depmap_auc
+      kind: regression
+    toxicity:
+      columns:
+        - tox_cardiotoxicity          # 37/33 HepG2, 38/25 A549 -- the best balanced
+        - tox_pulmonary_toxicity      # 29/41 , 31/32
+        - tox_renal_toxicity          # 41/29 , 40/23
+        - tox_infertility             # 42/28 , 40/23
+        - tox_liver_toxicity          # 54/16 , 50/13 -- marginal, guard will judge
+        - tox_hematological           # 62/8  , 57/6  -- expected to be skipped
+        - tox_dermatological_toxicity # 68/2  , 59/4  -- expected to be skipped
+      kind: classification
+      min_class_size: 8
+
+  # Guards applied to EVERY target. A binary target at 68/2 lets a classifier score
+  # 0.97 by predicting one class; balanced accuracy hides less of that than accuracy
+  # does, but such a target still cannot support a conclusion. Skip it and say so.
+  target_guards:
+    min_usable_n: 30            # rows with a label
+    min_minority_count: 10      # smallest class must have at least this many
+    min_minority_fraction: 0.15 # ...and this share of the labelled rows
+
+  # Feature blocks fed to the models. ecfp_only is the QSAR control: if morphology
+  # adds nothing over chemical structure alone, that is the finding.
+  feature_blocks:
+    - ecfp                          # the control, always run first
+    - morphology
+    - expression
+    - [morphology, expression]
+    - [morphology, ecfp]
+
+  models: [elastic_net, sparse_plsda, linear_svm, xgboost]
+
+  cv:
+    # Nested. The outer loop estimates performance; ALL selection, scaling and
+    # hyper-parameter choice happens in the inner loop.
+    outer_folds: 5
+    inner_folds: 3
+    repeats: 5
+    stratify: true
+    # Splits are by compound. With OpenScreen the site is the natural held-out
+    # unit — leave_one_site_out overrides outer_folds when the data has sites.
+    leave_one_site_out: true
+    seed: 0
+
+  # Picking the best of many models by CV is how you get 31-41% error on PURE NOISE.
+  # The model list is pre-declared above and every one of them is reported, always.
+  report_all_models: true
+
+  xgboost:
+    # Conservative by necessity: n ~ 60 labelled rows with p up to 41,780.
+    max_depth: 2
+    n_estimators: 200
+    learning_rate: 0.05
+    subsample: 0.8
+    colsample_bytree: 0.3
+    min_child_weight: 5
+    reg_alpha: 1.0
+    reg_lambda: 5.0
+    early_stopping_rounds: 20
+    # auto | cuda | cpu. The PyPI wheel is built against CUDA 13.x and fails on a
+    # 12.x driver, so `auto` probes with a real matmul and degrades to CPU.
+    device: auto
+
+  elastic_net:
+    l1_ratios: [0.1, 0.5, 0.7, 0.9, 1.0]
+    n_alphas: 50
+    # saga is the only sklearn solver supporting an elastic-net penalty for
+    # classification, and it is slow to converge on wide standardised data. 5000
+    # iterations costs minutes per fold here and buys nothing measurable; 1000 with
+    # a slightly looser tolerance converges on this scale. Raise it if you see
+    # ConvergenceWarning in the log.
+    max_iter: 1000
+    tol: 0.001
+
+  sparse_plsda:
+    n_components: 2
+    keep_x: [10, 25, 50, 100]      # mixOmics keepX semantics: a COUNT, not a penalty
+
+  linear_svm:
+    C: [0.001, 0.01, 0.1, 1.0]
+
+# --------------------------------------------------------------------------- #
+# Controls. These are not optional extras — they are the reason a result can be
+# believed. A destructive control is what revealed that percent replicating is
+# gameable by batch structure on LINCS batch1.
+# --------------------------------------------------------------------------- #
+controls:
+  enabled: true
+  # Break the compound correspondence between modalities. Every cross-modal
+  # statistic MUST collapse to its null. If it does not, the pipeline is wrong.
+  scrambled_pairing: true
+  # Gaussian noise with the same shape. Every statistic at chance.
+  random_block: true
+  # Labels permuted. Any classifier must fall to its chance baseline.
+  permuted_labels: true
+  n_repeats: 20
+
+# --------------------------------------------------------------------------- #
+# Explainability. The user's stated priority: show how the model decides.
+# --------------------------------------------------------------------------- #
+xai:
+  # Stability selection is the primary mechanism for sparse/linear models.
+  stability_selection:
+    enabled: true
+    mode: cpss                     # cpss (Shah & Samworth) | mb (Meinshausen & Buhlmann)
+    B: 200                         # halved to 100 for the 41,780-feature block
+    B_large_block: 100
+    large_block_threshold: 5000
+    pi_thr: 0.7                    # results insensitive anywhere in 0.6-0.9
+    target_ev: 5.0                 # expected number of false selections to tolerate
+
+  shap:
+    enabled: true
+    # INTERVENTIONAL, not the default path-dependent estimator. The default assumes
+    # feature independence and gives qualitatively wrong attributions under the
+    # block correlation CellProfiler features always have.
+    feature_perturbation: interventional
+    background_size: 50
+    max_display: 25
+
+  # Never used for the biological story: XGBoost gain/weight/cover and permutation
+  # importance both select zero-effect variables that merely correlate with real
+  # ones as often as the real ones.
+  forbid_impurity_importance: true
+
+  # Map feature names back to compartment / family / channel. Two conventions are
+  # in play: LINCS uses Cells/Cytoplasm/Nuclei, OpenScreen uses Cells/Cyto/Nuc.
+  feature_grammar:
+    compartments: [Cells, Cytoplasm, Nuclei, Cyto, Nuc]
+    channels: [AGP, DNA, ER, Mito, RNA, Brightfield, HighZBF, LowZBF]
+
+plots:
+  dpi: 150
+  format: png
+  # Fixed categorical palette, adjacent-pair colourblind-checked; the same one the
+  # rest of the workstream uses so figures read as one set.
+  palette: ["#2a78d6", "#eb6834", "#1baf7a", "#eda100", "#e87ba4",
+            "#008300", "#4a3aa7", "#e34948"]
+  facecolor: "#fcfcfb"
+
+compute:
+  # Outer parallel workers. -1 = every allocated core (capped by SLURM_CPUS_PER_TASK,
+  # so a job never grabs more than it asked for). The dominant Tier 1 costs -- 40
+  # control replicates per modality pair and the AJIVE permutation null -- are
+  # embarrassingly parallel and were serial until 2026-09-03.
+  n_jobs: -1
+  # BLAS threads INSIDE each worker. Keep at 1 for the many-small-tasks phases:
+  # 384 workers each spawning a 384-thread BLAS pool is how a zen5_dense node ends
+  # up with a load average in the thousands and a slower run than serial. The AJIVE
+  # null overrides this upward, because each of its replicates is BLAS-heavy.
+  inner_threads: 1
+  # Development shortcut. 0 = use everything. Always logged when non-zero.
+  subsample_compounds: 0
+  subsample_features: 0

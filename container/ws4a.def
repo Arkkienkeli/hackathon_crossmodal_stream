@@ -1,0 +1,211 @@
+Bootstrap: docker
+From: python:3.12-slim
+
+# ---------------------------------------------------------------------------
+# WS4A container — cross-modal integration: classical statistics + regularised ML.
+#
+# DELIBERATELY SEPARATE from the other two images, and much smaller than either:
+#   cpx.sif   3.7 GB  WS1/WS6: squidpy, pertpy, cp_measure, cellpose
+#   ws4.sif   4.6 GB  WS4 batch correction: scvi-tools, torch, harmonypy, CUDA base
+#   ws4a.sif  ~1 GB   THIS ONE: 60 packages, no deep-learning stack at all
+#
+# Why no DL stack: the WS4A tiers are matrix-agreement statistics and regularised
+# supervised models, and the compound-level tables are 94-119 rows. Nothing here
+# needs torch. The device probe in scripts/ws4a/common.py deliberately tests
+# XGBoost rather than importing torch, so the 3 GB dependency never enters.
+#
+# Why python:3.12-slim and not a CUDA base image (ws4.def uses one): XGBoost's PyPI
+# wheel carries what it needs for GPU, and apptainer's --nv supplies the driver.
+# Verified: the wheel is built against CUDA 13.3 and still trains on a 12.8 driver,
+# which is where torch's equivalent wheel fails outright.
+#
+# Build (from the repo root — %files paths are relative to the build cwd):
+#   bash scripts/build_ws4a_container.sh
+#   apptainer build container/ws4a.sif container/ws4a.def
+#
+# HPC: build here, copy the .sif. Running needs no root; only building does.
+# ---------------------------------------------------------------------------
+
+%arguments
+    UV_VERSION=0.8.17
+
+%files
+    container/ws4a-requirements.txt /opt/ws4a/requirements.txt
+    container/ws4a-requirements.in  /opt/ws4a/requirements.in
+
+%post
+    set -eux
+
+    export DEBIAN_FRONTEND=noninteractive
+    apt-get update
+    apt-get install -y --no-install-recommends \
+        ca-certificates curl git less procps tini \
+        build-essential libgomp1
+    rm -rf /var/lib/apt/lists/*
+
+    # --- uv, the same version the other two images pin ---------------------
+    export UV_INSTALL_DIR=/usr/local/bin
+    curl -LsSf "https://astral.sh/uv/{{ UV_VERSION }}/install.sh" | sh
+    uv --version
+
+    # --- the environment, from the compiled lock ---------------------------
+    # 60 packages, every one pinned. `uv pip install` (not `uv sync`) because this
+    # is a plain requirements lock, not a uv project.
+    export UV_LINK_MODE=copy
+    export UV_COMPILE_BYTECODE=1
+    uv venv --python /usr/local/bin/python3.12 /opt/venv
+    uv pip install --python /opt/venv/bin/python -r /opt/ws4a/requirements.txt
+    uv cache clean
+
+    # Usable by any UID: HPC runs the container as you, not as root.
+    chmod -R a+rX /opt/venv /opt/ws4a
+
+%environment
+    export PATH=/opt/venv/bin:$PATH
+    export VIRTUAL_ENV=/opt/venv
+
+    # A container image is read-only and matplotlib hard-fails when it cannot write
+    # its cache. All overridable so a compute node can point them at local scratch.
+    export MPLCONFIGDIR="${MPLCONFIGDIR:-${TMPDIR:-/tmp}/ws4a-mpl-$(id -u)}"
+    export XDG_CACHE_HOME="${XDG_CACHE_HOME:-${TMPDIR:-/tmp}/ws4a-cache-$(id -u)}"
+    export MPLBACKEND=Agg
+
+    # Thread control. Without this every BLAS call grabs every core on the node,
+    # which on a shared cluster is both slow and antisocial. SLURM_CPUS_PER_TASK is
+    # set by srun/sbatch; 4 is the laptop default.
+    _WS4A_THREADS="${SLURM_CPUS_PER_TASK:-4}"
+    export OMP_NUM_THREADS="${OMP_NUM_THREADS:-$_WS4A_THREADS}"
+    export OPENBLAS_NUM_THREADS="${OPENBLAS_NUM_THREADS:-$_WS4A_THREADS}"
+    export MKL_NUM_THREADS="${MKL_NUM_THREADS:-$_WS4A_THREADS}"
+
+    # Keep the host's ~/.local/lib/python3.12/site-packages and any activated conda
+    # env from shadowing the image. This machine has 25 conda envs.
+    export PYTHONNOUSERSITE=1
+    export WS4A_CONTAINER=1
+
+%runscript
+    if [ $# -eq 0 ]; then
+        echo "usage: apptainer run ws4a.sif <python|shell|stats|ml|xai|plots|compare|report|crossmodal> [args]"
+        exit 2
+    fi
+    case "$1" in
+        stats)  shift; exec python /work/scripts/ws4a_stats.py "$@" ;;
+        ml)     shift; exec python /work/scripts/ws4a_ml.py    "$@" ;;
+        xai)    shift; exec python /work/scripts/ws4a_xai.py   "$@" ;;
+        plots)  shift; exec python /work/scripts/ws4a_plots.py "$@" ;;
+        compare) shift; exec python /work/scripts/ws4a_compare.py "$@" ;;
+        report) shift; exec python /work/scripts/ws4a_report.py "$@" ;;
+        crossmodal) shift; exec python /work/scripts/ws4a_crossmodal.py "$@" ;;
+        hvg)    shift; exec python /work/scripts/ws4a_hvg_experiment.py "$@" ;;
+        shell)  exec bash ;;
+        *)      exec "$@" ;;
+    esac
+
+%test
+    # Runs at the end of `apptainer build` and on `apptainer test`. Checks the API
+    # surface the toolchain actually touches, not merely that imports succeed.
+    set -e
+    export MPLCONFIGDIR="${MPLCONFIGDIR:-/tmp/ws4a-mpl-build}"
+
+    python - <<'PYTEST'
+import inspect, sys
+import importlib.metadata as meta
+
+assert sys.version_info[:2] == (3, 12), f"python {sys.version}"
+
+import numpy, scipy, pandas, sklearn, statsmodels, anndata, mudata, h5py  # noqa: F401
+import matplotlib, seaborn, xgboost, shap, pycytominer, yaml, optuna     # noqa: F401
+for dist in ("numpy", "scipy", "pandas", "scikit-learn", "anndata", "mudata",
+             "xgboost", "shap", "pycytominer", "matplotlib", "optuna"):
+    print(f"  {dist:<14} {meta.version(dist)}")
+
+# --- the pins every measured claim in docs/ws4/ depends on ------------------
+assert meta.version("numpy").startswith("2."), meta.version("numpy")
+assert meta.version("pandas").startswith("3."), meta.version("pandas")
+
+# The WS4 finding lives on these two pycytominer defaults. If an upgrade changes
+# the arithmetic, the finding needs rewriting, and this is how you learn.
+from pycytominer import normalize, feature_select
+assert inspect.signature(normalize).parameters["mad_robustize_epsilon"].default == 1e-18
+assert inspect.signature(feature_select).parameters["outlier_cutoff"].default == 500.0
+print("  mad_robustize_epsilon = 1e-18, outlier_cutoff = 500.0  (WS4 finding holds)")
+
+# --- the toolchain's own vendored algorithms --------------------------------
+sys.path.insert(0, "/work/scripts")
+try:
+    from ws4a import ajive, matrix_agreement as MA, stabsel, splsda, permcca  # noqa: F401
+except ImportError as exc:
+    print(f"  NOTE: vendored modules not visible at build time ({exc});"
+          " they live in the repo bind, not the image")
+else:
+    import numpy as np
+    rng = np.random.default_rng(0)
+    n = 60
+    Z = rng.standard_normal((n, 2))
+    X = Z @ rng.standard_normal((2, 40)) + 0.7 * rng.standard_normal((n, 40))
+    Y = Z @ rng.standard_normal((2, 60)) + 0.7 * rng.standard_normal((n, 60))
+    Xn, Yn = rng.standard_normal((n, 40)), rng.standard_normal((n, 60))
+
+    # The headline property: the adjusted RV must be ~0 on independent blocks
+    # where the plain RV is large. This is the whole reason Tier 1 is trustworthy.
+    c_null = MA.rv_coefficients(Xn, Yn)
+    c_real = MA.rv_coefficients(X, Y)
+    assert abs(c_null["rv_adj"]) < 0.15, c_null
+    assert c_real["rv_adj"] > 0.5, c_real
+    print(f"  adjusted RV: null {c_null['rv_adj']:+.3f} (plain {c_null['rv']:.3f}), "
+          f"planted {c_real['rv_adj']:+.3f}")
+
+    # AJIVE takes ordered LISTS of blocks and ranks, not dicts.
+    aj = ajive.AJIVE(init_signal_ranks=[6, 6], random_state=0).fit([X, Y])
+    assert aj.joint_rank_ >= 1, aj.joint_rank_
+    print(f"  AJIVE joint rank on planted rank-2 data: {aj.joint_rank_}")
+
+# --- optuna's sampler must be reproducible ----------------------------------
+# The tuned run is only comparable with the baseline if the same seed gives the
+# same search. TPE is stochastic; the seed is what makes a rerun a rerun.
+import optuna
+optuna.logging.set_verbosity(optuna.logging.WARNING)
+def _obj(t):
+    x = t.suggest_float("x", -5, 5)
+    return -(x - 1.3) ** 2
+_vals = []
+for _ in range(2):
+    st = optuna.create_study(direction="maximize",
+                             sampler=optuna.samplers.TPESampler(seed=7))
+    st.optimize(_obj, n_trials=12, show_progress_bar=False)
+    _vals.append(st.best_params["x"])
+assert abs(_vals[0] - _vals[1]) < 1e-12, f"TPESampler(seed=7) not reproducible: {_vals}"
+print(f"  optuna TPESampler(seed=7) reproducible: x={_vals[0]:.6f} twice")
+
+# --- xgboost GPU is reported, never asserted --------------------------------
+# `apptainer build` runs without --nv, so the GPU is invisible here by design.
+info = xgboost.build_info()
+print(f"  xgboost built against CUDA {info.get('CUDA_VERSION')} "
+      f"(GPU needs `apptainer ... --nv`; not testable during build)")
+PYTEST
+
+%labels
+    Name        ws4a
+    Purpose     WS4A cross-modal integration -- classical statistics and regularised ML
+    Stack       numpy/scipy/sklearn/xgboost/shap, no deep-learning dependency
+
+%help
+    WS4A — cross-modal integration toolchain (classical statistics + regularised ML).
+
+    ENTRY POINT
+      bash scripts/ws4a.sh stats  --cell-line hepg2
+      bash scripts/ws4a.sh ml     --cell-line hepg2 --target toxicity
+      bash scripts/ws4a.sh xai    --cell-line hepg2 --target tox_cardiotoxicity
+      bash scripts/ws4a.sh plots  --cell-line hepg2
+
+    CONFIG
+      Everything is driven by configs/ws4a.yaml. No script hardcodes a path.
+      Override the data location with --root, or WS4A_DATA for the sbatch.
+
+    GPU
+      Only XGBoost uses it, and only helps on the large blocks. Needs --nv, which
+      scripts/ws4a.sh adds when a GPU is present. WS4A_GPU=0 forces CPU.
+
+    WHAT IS NOT HERE
+      torch, scvi-tools, harmonypy, scanpy, squidpy, pertpy. Those are ws4.sif and
+      cpx.sif. This image is intentionally small.

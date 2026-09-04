@@ -1,0 +1,55 @@
+# WS4A — cross-modal integration toolchain. A SEPARATE, deliberately small image.
+#
+# Not container/ws4.def (4.6 GB: scvi-tools, torch, harmonypy, a CUDA base image) and
+# not container/cpx.def (3.7 GB: squidpy, pertpy, cp_measure, cellpose). This one has
+# no deep-learning stack at all, because the WS4A tiers are classical statistics and
+# regularised ML, and the compound-level tables are ~100 rows.
+#
+# The five core algorithms are VENDORED in scripts/ws4a/ rather than installed:
+#   ajive             no pip-installable AJIVE works on py3.12 -- mvlearn needs
+#                     --no-deps (it pins matplotlib<=3.3.4) and py_jive needs a
+#                     scipy monkeypatch. The vendored numpy version was verified
+#                     numerically identical to mvlearn (squared singular values to
+#                     1.6e-13) and passes both destructive controls.
+#   matrix_agreement  no package covers bias-adjusted RV with a permutation null.
+#   stabsel           `stability-selection` is not on PyPI, was last touched in 2019
+#                     and imports sklearn.externals.joblib (removed in sklearn 0.23).
+#   splsda            there is no maintained Python port of mixOmics.
+#   permcca           Winkler's CCA permutation scheme has no packaged implementation.
+# Vendoring them means this file stays short and nothing here can break them.
+
+# --- core numerics. Pinned to the versions every claim in docs/ws4/ was measured on.
+numpy==2.5.2
+scipy==1.18.1
+pandas==3.0.5
+scikit-learn==1.9.0
+statsmodels==0.15.0          # multipletests, for the BH/Holm corrections
+joblib==1.6.0                # stability selection parallelises over half-samples
+
+# --- data formats
+anndata==0.13.2              # OpenScreen .h5ad
+mudata==0.4.1                # the compound-level .h5mu
+h5py==3.16.0
+pyarrow==25.0.1              # parquet caching
+
+# --- models and explanations
+xgboost==3.4.1               # GPU via device="cuda"; the wheel is built against CUDA
+                             # 13.3 and, unlike torch's, DOES run on a 12.8 driver --
+                             # verified. common.resolve_device probes it by training.
+shap==0.52.0                 # interventional TreeSHAP. NOTE: falls back to the
+                             # path-dependent estimator on models with categorical
+                             # splits, and the toolchain labels the figure when it does.
+optuna==4.9.0                # hyper-parameter search, INNER CV LOOP ONLY. TPESampler
+                             # is stochastic, so scripts/ws4a/tuning.py seeds it per
+                             # fold -- otherwise a rerun is not a rerun and the tuned
+                             # run cannot be compared with the untuned one. Pure
+                             # python + SQLAlchemy; adds ~15 MB, no native build.
+
+# --- morphology-specific
+pycytominer==1.7.0           # only for its packaged blocklist, which needs a
+                             # compartment-prefix translation to match OpenScreen names
+
+# --- figures and config
+matplotlib==3.11.1
+seaborn==0.13.2
+PyYAML==6.0.3

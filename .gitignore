@@ -1,0 +1,84 @@
+# ---------------------------------------------------------------------------
+# WS4 cross-modal stream — keep downloaded and regenerated data out of git.
+#
+# This repo ships only two things: the four notebooks, and the small curated
+# per-site profiles under LINCS/data/ and OpenScreen/data/. Everything else the
+# notebooks touch is an INPUT that has to be fetched:
+#
+#   *_cells.h5ad          Google Drive        ~2-4 GB each
+#   aggregated_data/      Google Drive        raw per-well CSVs, 5 sites x 28 files
+#   annotations/          Google Drive        compound + well annotation CSVs
+#   LINCS/morphology/     Cell Painting Gallery S3 (266 MiB) + GitHub LFS
+#
+# ...or an OUTPUT the notebooks write next to themselves (lincs_expression_a549.h5ad
+# is 605,940 x 62,710 — never commit that).
+#
+# See docs/ws4/data.md in the parent project for what each one unlocks.
+# ---------------------------------------------------------------------------
+
+# --- heavy data formats, wherever they land --------------------------------
+*.h5ad
+*.h5
+*.hdf5
+*.zarr/
+*.parquet
+*.feather
+*.sqlite
+*.csv
+*.csv.gz
+*.tsv
+*.tsv.gz
+*.npy
+*.npz
+*.pkl
+*.tiff
+*.tif
+*.nd2
+*.zip
+*.gz
+
+# --- ...except the curated profiles this repo genuinely ships --------------
+# Narrow on purpose: `!LINCS/data/**` would re-include ANYTHING dropped under
+# data/, and the lincs-cell-painting checkout is 1.1 GB of exactly that.
+!LINCS/data/*.h5ad
+!OpenScreen/data/*.h5ad
+
+# --- downloaded input trees ------------------------------------------------
+# lincs-cell-painting, 1.1 GB. It has arrived under LINCS/data/morphology/ in
+# this tree; LINCS/morphology/ is where the notebook expects it. Ignore both.
+LINCS/morphology/
+LINCS/data/morphology/
+LINCS/a549_cells.h5ad
+aggregated_data/
+annotations/
+OpenScreen/aggregated_data/
+OpenScreen/annotations/
+OpenScreen/hepg2_cells.h5ad
+
+# --- python / jupyter ------------------------------------------------------
+__pycache__/
+*.py[cod]
+.ipynb_checkpoints/
+.venv/
+venv/
+
+# --- os / editor -----------------------------------------------------------
+.DS_Store
+.vscode/
+.idea/
+
+# --- WS4A: the merged result tables ARE the record, so they ship -------------
+# `*.csv` above is a blanket ignore for downloaded profiles. These few are small
+# (~250 KB total) and are what any claim in docs/ws4a/ can be checked against.
+!Results/ws4a/**/*.csv
+!Results/ws4a_tuned/**/*.csv
+!WS4A_presentation_pack/**/*.csv
+# ...but not the 120 per-task intermediates the array job leaves behind; they are
+# redundant with the merged tables above.
+Results/**/parts/
+Results/**/units.tsv
+Results/**/cache/
+
+# LibreOffice lock files, left behind by headless pptx->pdf conversion
+.~lock.*
+.~*

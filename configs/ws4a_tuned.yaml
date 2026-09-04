@@ -1,0 +1,59 @@
+# WS4A — TUNED run. An OVERLAY on configs/ws4a.yaml, not a copy of it.
+#
+#   apptainer ... ml --config /work/configs/ws4a_tuned.yaml --cell-line hepg2
+#
+# `extends:` pulls in every key of the base config; only what is written below is
+# changed. Editing a target list or a data path still happens in ONE place. Lists
+# replace wholesale (models: [a] means only a), dicts merge key by key.
+#
+# WHAT THIS CHANGES, AND WHY EACH CHANGE IS SAFE
+# ----------------------------------------------
+# 1. A DIFFERENT OUTPUT DIRECTORY. The untuned baseline is the thing this run is
+#    compared against; overwriting it would destroy the comparison.
+# 2. tuning.n_trials > 0, which swaps the fixed grid for an Optuna search that runs
+#    ENTIRELY INSIDE the inner CV fold. The outer fold is never seen by the search,
+#    so the reported score stays unbiased at any budget.
+# 3. The permuted control receives the IDENTICAL budget. scripts/ws4a_ml.py enforces
+#    this; it is not a config option, because making it one would let a future edit
+#    quietly manufacture a gap.
+#
+# WHY THE BUDGET IS SMALL
+# -----------------------
+# n ~ 64 with ~14 positives. Best-of-124 model selection on PERMUTED high-dimensional
+# data gives 31-41% error against a 50% chance baseline (Boulesteix & Strobl), and the
+# bias grows as n shrinks. 40 trials is enough for TPE to move off the defaults on a
+# 1-2 parameter space and to explore XGBoost's 8-parameter space coarsely. It is
+# deliberately not 500. Measure the price before raising it:
+#
+#   ml --config /work/configs/ws4a_tuned.yaml --bias-sweep 0,10,40,150 \
+#      --target toxicity --models xgboost
+
+extends: ws4a.yaml
+
+paths:
+  # THE POINT OF THIS FILE. Baseline lands in LINCS/data/ws4a; this lands beside it.
+  outputs: LINCS/data/ws4a_tuned
+  cache: LINCS/data/ws4a_tuned/cache
+
+ml:
+  tuning:
+    # 0 = the base config's fixed grid. > 0 = Optuna, inner loop only.
+    n_trials: 40
+    # Permutations averaged per budget in --bias-sweep.
+    # MEASURED, and the reason this is 10 rather than 3: a single permuted run of
+    # xgboost on tox_cardiotoxicity x ecfp has a fold-to-fold spread of ~0.075.
+    # Three repeats give a standard error of 0.075/sqrt(3) = 0.043, against a bias
+    # effect of about the same size -- so a 3-repeat curve is unreadable, and the
+    # first one produced non-monotone points (0 trials -0.009, 10 trials +0.053,
+    # 40 trials +0.011) that are all within one SEM of each other. 10 repeats give
+    # 0.024. The sweep is opt-in and cheap next to a full run; pay for it.
+    bias_sweep_repeats: 10
+
+  xgboost:
+    # Optuna searches min_child_weight from 1. The baseline's fixed 5, against 14
+    # positives, satisfied no split at all: 2 of 200 trees grew, the model returned
+    # the majority class every fold, and balanced accuracy was exactly 0.500 +- 0.000
+    # -- chance by construction, reported as though it were a null result. The tuned
+    # run cannot repeat that, but the baseline value is left in the base config on
+    # purpose so the two runs remain a real before/after.
+    device: auto
