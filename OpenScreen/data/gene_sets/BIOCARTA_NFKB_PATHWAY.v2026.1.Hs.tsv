@@ -1,0 +1,19 @@
+STANDARD_NAME	BIOCARTA_NFKB_PATHWAY
+SYSTEMATIC_NAME	M15285
+COLLECTION	C2:CP:BIOCARTA
+MSIGDB_URL	https://www.gsea-msigdb.org/gsea/msigdb/human/geneset/BIOCARTA_NFKB_PATHWAY
+NAMESPACE	Human_RefSeq
+DESCRIPTION_BRIEF	NF-kB Signaling Pathway
+DESCRIPTION_FULL	Nuclear factor kB (NF-kB) is a nuclear transcription factor that regulates expression of a large number of genes that are critical for the regulation of apoptosis, viral replication, tumorigenesis, inflammation, and various autoimmune diseases. The activation of NF-kB is thought to be part of a stress response as it is activated by a variety of stimuli that include growth factors, cytokines, lymphokines, UV, pharmacological agents, and stress. In its inactive form, NF-kB is sequestered in the cytoplasm, bound by members of the IkB family of inhibitor proteins, which include IkBa, IkBb, IkBg, and IkBe. The various stimuli that activate NF-kB cause phosphorylation of IkB, which is followed by its ubiquitination and subsequent degradation. This results in the exposure of the nuclear localization signals (NLS) on NF-kB subunits and the subsequent translocation of the molecule to the nucleus. In the nucleus, NF-kB binds with a consensus sequence (5'GGGACTTTCC-3') of various genes and thus activates their transcription. IkB proteins are phosphorylated by IkB kinase complex consisting of at least three proteins; IKK1/IKKa, IKK2/IKKb, and IKK3/IKKg. These enzymes phosphorylate IkB leading to its ubiquitination and degradation. Tumor necrosis factor (TNF) which is the best-studied activator binds to its receptor and recruits a protein called TNF receptor death domain (TRADD). TRADD binds to the TNF receptor-associated factor 2 (TRAF-2) that recruits NF-kB-inducible kinase (NIK). Both IKK1 and IKK2 have canonical sequences that can be phosphorylated by the MAP kinase NIK/MEKK1 and both kinases can independently phosphorylate IkBa or IkBb. TRAF-2 also interacts with A20, a zinc finger protein whose expression is induced by agents that activate NF-kB. A20 functions to block TRAF2-mediated NF-kB activation. A20 also inhibits TNF and IL-1 induced activation of NF-kB suggesting that it may act as a general inhibitor of NF-kB activation.
+PMID	
+GEOID	
+AUTHORS	
+CONTRIBUTOR	BioCarta
+CONTRIBUTOR_ORG	BioCarta
+EXACT_SOURCE	
+FILTERED_BY_SIMILARITY	
+EXTERNAL_NAMES_FOR_SIMILAR_TERMS	
+EXTERNAL_DETAILS_URL	https://data.broadinstitute.org/gsea-msigdb/msigdb/biocarta/human/h_nfkbPathway.gif
+SOURCE_MEMBERS	BM458535,BQ948628,NM_000575,NM_000594,NM_000877,NM_001065,NM_001066,NM_001099856,NM_001099857,NM_001145138,NM_001145255,NM_001165412,NM_001172566,NM_001172567,NM_001172568,NM_001172569,NM_001190720,NM_001242778,NM_001243984,NM_001243985,NM_001270507,NM_001270508,NM_001278,NM_001556,NM_002468,NM_003188,NM_003639,NM_003789,NM_003804,NM_003824,NM_003954,NM_003998,NM_004620,NM_005921,NM_006116,NM_006290,NM_020529,NM_021975,NM_145331,NM_145332,NM_145333,NM_145803,NM_153497
+GENE_SYMBOLS	,,IL1A,TNF,IL1R1,TNFRSF1A,TNFRSF1B,IKBKG,IKBKG,RELA,IKBKG,NFKB1,MYD88,MYD88,MYD88,MYD88,IKBKB,IKBKB,RELA,RELA,TNFAIP3,TNFAIP3,CHUK,IKBKB,MYD88,MAP3K7,IKBKG,TRADD,RIPK1,FADD,MAP3K14,NFKB1,TRAF6,MAP3K1,TAB1,TNFAIP3,NFKBIA,RELA,MAP3K7,MAP3K7,MAP3K7,TRAF6,TAB1
+FOUNDER_NAMES	

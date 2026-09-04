@@ -45,7 +45,9 @@ Desktop.ini
 *.rdata
 
 LINCS/data/
-Openscreen/data/
+Openscreen/data/plate_level_data/
+OpenScreen/data/predictions/
+OpenScreen/data/prior_knowledge/
 
 # Generated figures
 figures/
